@@ -1,0 +1,295 @@
+---
+title: "Practice with Iris Data"
+author: "Joseph Lai"
+date: "2025-09-28"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r}
+# 全域載入 ggplot2
+library(ggplot2)
+library(datasets)
+
+Data <- iris
+
+set.seed(123)
+RegressionData <- data.frame(
+  Price = seq(10, 100, length.out = 50),
+  Quantity.Sold = 200 - seq(10, 100, length.out = 50) + rnorm(50, 0, 10)
+)
+
+TwowayBetweenData <- expand.grid(
+  Week = factor(1:4),
+  Method = c("A", "B")
+)
+set.seed(456)
+TwowayBetweenData$Response <- rnorm(nrow(TwowayBetweenData), mean = 50, sd = 5)
+
+set.seed(789)
+Data$FactorA <- sample(LETTERS[1:2], nrow(Data), replace = TRUE)
+Data$FactorB <- sample(letters[1:2], nrow(Data), replace = TRUE)
+Data$FactorC <- sample(c("X", "Y"), nrow(Data), replace = TRUE)
+Data$Time2 <- rnorm(nrow(Data), mean = 10, sd = 2)
+```
+
+# R 語言繪圖函式庫：ggplot2 教材
+
+## 1. ggplot2 簡介與引用
+
+-   **ggplot2** 是一個強大的繪圖套件，其繪圖指令將作為本教材的主要教學內容。
+-   **引用函式庫**：在使用 **ggplot2** 之前，必須先引用該套件。
+
+| 套件 (packages)    | 說明 (illustrate)           | 影響函式 (function()) |
+|:-------------------|:----------------------------|:----------------------|
+| `library(ggplot2)` | 繪圖套件 (Plotting package) | `ggplot()`            |
+
+## 2. ggplot2 的圖形語法 (Grammar of Graphics)
+
+**ggplot2** 是基於 **「圖形語法」** (Grammar of Graphics) 的想法來繪圖，其繪圖文法包含以下主要屬性，並使用 **`+`** 符號來層層疊加。
+
+### 2.1 繪圖三大流程 (圖層概念)
+
+繪圖通常以三階段流程方式處理：
+
+1.  **準備資料與畫布 (Data & Canvas)**：
+    -   使用 **`ggplot(data)`** 建構出圖形的「畫布」(canvas)。
+2.  **設定美學屬性 (Aesthetics)**：
+    -   使用 **`aes(x, y, ...)`** 來指定美學表現，包括「顏色 (color)」、「形狀 (shape)」、「點的大小 (size)」與「線的粗細 (linetype)」等。
+3.  **指定幾何屬性 (Geometries)**：
+    -   使用 **`geom_XXX()`** 指定幾何屬性，包括「點 (geom_point)」、「線 (geom_line)」、「盒狀圖 (geom_boxplot)」、「直條圖 (geom_bar)」等。
+
+### 2.2 完整的繪圖基本語法結構
+
+```         
+p <- ggplot(data = <數據data>,
+            mapping = aes(<維度> = <變數名稱>, <維度> = <變數名稱>, <...>)) +
+  geom_XXX() | stat_XXX() +    # 幾何圖形或統計變換 (必要)
+  scale_XXX() +                # 標度調整 (選用)
+  coord_XXX() +                # 座標調整，默認為笛卡爾坐標系 (選用)
+  facet_xxx() +                # 圖例分面調整 (選用)
+  guides() +                   # 圖例調整 (選用)
+  theme()                      # 主題設定 (選用)
+```
+
+### 2.3 其他次要屬性
+
+-   **Facets (分面)**：在同一張圖內做多個子圖的方法，可設定子圖分類的依據參數 (`facet_grid()` 或 `facet_wrap()`)。
+-   **Stats (統計轉換)**：將資料做統計轉換 (`stat_summary()`)。
+-   **Scales (標度)**：修改點線的顏色、形狀、xy 軸的範圍等 (`scale_x_continuous()`, `scale_fill_brewer()`)。
+
+------------------------------------------------------------------------
+
+## 3. 常見幾何元件 (Geometric Objects)
+
+| 變數數目 | 變數類型 | 圖形類型 | ggplot2 幾何元件 (`geom_functions`) | 解釋與適用資料 |
+|:--------------|:--------------|:--------------|:--------------|:--------------|
+| 1 | 連續 (continuous) | **直方圖** | `geom_histogram()` | 觀察數據分布的大致情況，應用在連續性的數值上。 |
+| 1 | 離散 (Discrete) | **長條圖** | `geom_bar()` | 比較一個變量小規模的數據分析，適用於離散型資料。 |
+| 1 | 連續 + 離散 | **箱型圖** | `geom_boxplot()` | 了解資料的分散狀況，可觀察出中位數、四分位數和最大最小值。 |
+| 2 | 連續 (continuous) | **散佈圖** | `geom_point()` | 將兩個變數以點呈現，可協助了解兩者之間有無關聯，可搭配 `geom_smooth()`。 |
+| 2 | 連續 (continuous) | **折線圖** | `geom_line()` | 連續性的資料，把所有的點用線段連結起來，觀察 x 軸變數序列上 y 的變化情形。 |
+| 2 | 連續 (continuous) | **平滑曲線** | `geom_smooth()` | 把所有的資料平滑化後繪製，一般協助觀察並找出資料的特徵。 |
+
+------------------------------------------------------------------------
+
+## 4. 繪圖美化與調整 (Enhancing the Plot)
+
+好的圖表能夠揭示數據中的模式、異常和相關性。應注意清晰性、統一性和簡化。
+
+### 4.1 改變座標軸與標題
+
+-   使用 **`xlab("x name")`** 和 **`ylab("y name")`** 輸入坐標軸名稱。
+-   使用 **`labs(x = " ", y = " ", title = " ", subtitle = " ")`** 設定圖表標題、副標題和軸標題。
+-   標題也可利用 **`ggtitle(" ")`** 設定。
+
+### 4.2 修改座標軸格式
+
+-   **`scale_x_continuous()`** 和 **`scale_y_continuous()`** 用於調整 X 軸和 Y 軸格式。
+    -   例如：**`scale_x_continuous(limits = c(min, max))`** 或 **`xlim(min, max)`** 只顯示特定範圍的數據。
+
+### 4.3 圖形樣式設定 (Theme)
+
+-   使用 **`theme()`** 設定圖形樣式，可使用內建樣式。
+    -   **`theme_gray()`**: 灰背景，為預設樣式。
+    -   **`theme_bw()`**: 黑白樣式。
+
+### 4.4 顏色與分類變數處理
+
+-   **顏色選擇**：可使用 **`scale_fill_brewer()`** 調整顏色調色板範本。
+-   **離散型數值資料**：如果資料是離散型但呈現為數值（如 0.5, 1, 2, 3），請用 **`factor()`** 函式轉換，**ggplot2** 會將 `factor` 視為離散資料處理。
+
+------------------------------------------------------------------------
+
+## 5. 繪圖範例程式碼 (以 `Data` 資料集為例)
+
+### 5.1 箱型圖 (Box Plot)
+
+```{r}
+library(ggplot2)
+
+# 箱型圖範例：Petal.Length (花瓣長度) 依 Species (物種) 分組
+ggplot(Data, aes(x = Species , y = Petal.Length, fill = Species)) +
+  # 繪製箱型圖
+  geom_boxplot() +     
+  # 添加點圖，顯示數據點分布
+  geom_dotplot(binaxis = 'y', stackdir = 'center', dotsize = 0.3) + 
+  # 設定標題
+  ggtitle('Boxplot of Petal Length by Iris Species') +
+  # 使用黑白主題
+  theme_bw()                                          
+```
+
+### 5.2 長條圖 (Bar Chart)
+
+此範例繪製的是各物種 **Petal.Length** 的平均值長條圖。
+
+```{r}
+# 長條圖範例：Petal.Length 平均值長條圖
+ggplot(Data, aes(Species , Petal.Length, group = Species)) +
+   # 繪製平均值長條圖
+  geom_bar(stat = "summary", fun = "mean") +      
+  # 在圖上標示平均值數字
+  stat_summary(aes(label = round(..y.., 2)), fun = mean,      
+               geom = "text", size = 3, vjust = -0.5) +
+  ggtitle('Bar Plot of Petal Length by Iris Species') +
+  theme_bw()
+```
+
+### 5.3 線圖 (Line Chart)
+
+此範例繪製的是各物種 **Petal.Length** 的平均值線圖。
+
+```{r}
+# 線圖範例：Petal.Length 平均值線圖
+ggplot(Data, aes(Species, Petal.Length, group = 1)) +    # group=1 表示所有點連成一條線
+  stat_summary(fun = mean, geom = "line") +            # 繪製平均值線段
+  stat_summary(fun = mean, geom = "point") +           # 繪製平均值點
+  stat_summary(aes(label = round(..y.., 2)), fun = mean,    # 在圖上標示平均值數字
+               geom = "text", size = 3, vjust = -0.5) +
+  ggtitle('Line Plot of Petal Length by Iris Species') +
+  theme_bw()
+```
+
+### 5.4 散佈圖 (Scatter Plot)
+
+#### 基礎散佈圖
+
+```{r}
+# 散布圖範例：Petal.Length vs Petal.Width
+ggplot(Data, aes(x = Petal.Length, y = Petal.Width, color = Species, shape = Species)) +
+  geom_point() +                                       # 繪製散佈點
+  ggtitle('Scatter Plot of Sepal Length by Iris Species') +
+  theme_bw()
+```
+
+#### 散佈圖加入平滑曲線 (迴歸線)
+
+```{r}
+# 散布圖加入迴歸線範例 (適用於 RegressionData)
+ggplot(RegressionData, aes(x = Price, y = Quantity.Sold)) +
+  geom_point() +
+  geom_smooth(method = lm, se = TRUE)
+geom_smooth() 函數在散點圖上加上一條平滑曲線，用於表示資料趨勢
+# method = "lm" 指定使用線性回歸模型 (lm) 來擬合趨勢線
+# se = TRUE 表示在趨勢線周圍顯示標準誤差的區域
+```
+
+### 5.5 直方圖 (Histogram)
+
+#### 基礎直方圖 (含分組)
+
+```{r}
+# 直方圖範例：Petal.Length (花瓣長度) 依 Species (物種) 累積頻率
+ggplot(Data, aes(x = Petal.Length, colour = Species, fill = Species)) +
+  geom_histogram(alpha = 0.4) +                        # 繪製直方圖，alpha設定透明度
+  ggtitle('Histogram of Iris Sepal Length with Frequency Distribution') +
+  theme_bw()
+```
+
+#### 直方圖分面 (Facet)
+
+使用 `facet_grid()` 依 **Species** 進行分組繪製多張圖表。
+
+```{r}
+# 直方圖、分組分面範例
+ggplot(Data, aes(x = Petal.Length, colour = Species, fill = Species)) +
+  geom_histogram(alpha = 0.4) +
+  # facet_grid(.~Species)  # 欄位分面
+  facet_grid(Species ~ .) +                            # 列分面
+  ggtitle('Histogram of Iris Sepal Length with Cumulative Frequency') +
+  theme_bw()
+```
+
+### 5.6 二階/三階圖形 (交互作用圖)
+
+#### 二階交互作用圖 (線圖，含誤差線)
+
+```{r}
+# 繪製二階圖形 (Line Chart，Method 分組，含標準誤差 error bar)
+ggplot(TwowayBetweenData, aes(Week, Response, group = Method)) +
+  # 繪製平均值線條，使用不同的線條類型 (linetype) 區分 Method
+  stat_summary(fun = mean, geom = "line", aes(linetype = Method)) +
+  # 繪製平均值點標記
+  stat_summary(fun = mean, geom = "point", aes(linetype = Method)) +
+  # 添加誤差線，使用標準誤差 (mean_se) 顯示範圍
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, aes(linetype = Method)) +
+  # 顯示每個點的平均值標籤
+  stat_summary(aes(
+    label = round(..y.., 2)), fun = mean, geom = "text", size = 3, vjust = -0.5) +
+  # 設定標題和軸標籤
+  ggtitle('線圖繪製:時間與方法對反應時間圖') +
+  xlab("week時間") +
+  ylab("Response反應時間")
+```
+
+#### 二階交互作用圖 (長條圖，含誤差線，分面)
+
+```{r}
+# 繪製二階圖形 (Bar Chart，分組 + 誤差線，並使用分面)
+ggplot(TwowayBetweenData, aes(Week, Response, group = Method)) +
+  # 繪製圖，使用 position = "dodge" 讓長條圖並排
+  geom_bar(stat = "summary", fun = "mean", position = "dodge") +
+  # 添加誤差線
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.2, position = position_dodge(width = 0.9)) +
+  # 在圖上方顯示平均值標籤
+  stat_summary(aes(label = round(..y.., 2)), fun = mean,
+               geom = "text", size = 3, vjust = -0.5,
+               position = position_dodge(width = 0.9)) +
+  # 使用 facet_grid 將圖分為兩個欄位，根據 Method 顯示
+  facet_grid(. ~ Method) +
+  # 設定圖表標題與副標題
+  ggtitle('時間與方法對反應時間圖', subtitle = "左邊為methodA、右邊為methodB") +
+  # 隱藏圖例說明
+  theme(legend.position = "none")
+```
+
+#### 三階交互作用圖 (分面)
+
+此範例繪製兩張二階交互作用圖，並透過 **FactorB** 進行分面，達到顯示三因子交互作用的效果。
+
+```{r}
+set.seed(789)
+Data$FactorA <- sample(LETTERS[1:2], nrow(Data), replace = TRUE)
+Data$FactorB <- sample(letters[1:2], nrow(Data), replace = TRUE)
+Data$FactorC <- sample(c("X", "Y"), nrow(Data), replace = TRUE)
+Data$Time2 <- rnorm(nrow(Data), mean = 10, sd = 2)
+```
+
+```{r}
+# 繪製圖表，X 軸為 FactorA，Y 軸為 Time2，並根據 FactorC 分組和著色
+ggplot(Data, aes(FactorA, Time2, group = FactorC, color = FactorC)) +
+  ggtitle("三階交互作用") +
+  # 繪製平均值線條
+  stat_summary(fun = mean, geom = "line") +
+  # 繪製平均值點標記
+  stat_summary(fun = mean, geom = "point") +
+  # 顯示每個點的平均值標籤，使用 position_dodge() 來避免標籤重疊
+  stat_summary(aes(label = round(..y.., 2)), fun = mean, geom = "text", size = 4.5, position = position_dodge(0.5)) +
+  # 根據 FactorB 分面繪製圖形
+  facet_grid(. ~ FactorB)
+```
