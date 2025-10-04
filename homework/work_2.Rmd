@@ -1,0 +1,247 @@
+---
+title: "work_2 作業報告"
+author: ''
+date: "2025-09-30"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+  pdf_document:
+    toc: true
+    toc_depth: '2'
+  word_document:
+    toc: true
+    toc_depth: '2'
+fontsize: 12pt
+mainfont: "Noto Sans CJK TC"
+latex_engine: xelatex
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(webshot2)
+```
+
+## 安裝工具來做描述性統計
+
+```{r install-packages, eval=FALSE}
+install.packages(c("psych", "emmeans"))
+install.packages("emmeans")
+```
+
+## 載入套件
+
+```{r libraries}
+library(psych)
+library(emmeans)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(tidyr)
+library(ggplot2)
+library(broom)
+```
+
+# 0. 輸入CSV
+
+```{r input-csv}
+emg_df <- data.frame(
+  Sex    = c("M","M","F","M","M","M","F","M","F","F"),
+  Hand   = rep("Right", 10),
+  Muscle = rep("forearm", 10),
+  basic  = c(0.116,0.133,0.085,0.140,0.134,0.204,0.128,0.137,0.142,0.137),
+  grip   = c(0.769,0.521,0.749,0.708,0.652,1.10,0.785,0.820,0.634,0.729)
+)
+```
+
+# 第一題：輸出CSV
+
+```{r output-csv}
+write.csv(emg_df, "emg_data.csv")
+```
+
+> 先製作 long data 方便後續分析
+
+```{r}
+dat_long <- emg_df %>%
+  mutate(ID = paste0("ST_", row_number())) %>%
+  pivot_longer(
+    cols      = c(basic, grip),
+    names_to  = "action",
+    values_to = "EEG"
+  )
+```
+
+# 第二題：繪製 “action 因子”之描述統計、繪製 “sex 性別因子”之描述統計
+
+```{r describe}
+desc_action <- psych::describeBy(dat_long$EEG, group = dat_long$action, mat = TRUE) %>%
+  select(group = group1, N = n, Mean = mean, SD = sd, Median = median, Min = min, Max = max, Skew = skew, Kurtosis = kurtosis, SEM = se) 
+
+desc_action %>%
+  kable(align = "l", digits = 2, row.names = FALSE,
+        caption = "Descriptive Statistics by Action") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 在 靜止 (basic) 條件下，前臂肌群肌電活動相對較低，平均值為 0.136 (SD = 0.029, SE = 0.009)，數值範圍介於 0.085 至 0.204 之間。資料分布近似常態，呈現輕度右偏 (偏態 = 0.72)，峰度為 0.85，顯示受試者間數值相當集中且穩定。
+>
+> 在 抓握 (grip) 條件下，前臂肌群肌電活動顯著增加，平均值為 0.747 (SD = 0.151, SE = 0.048)，數值範圍介於 0.521 至 1.100 之間。分布同樣近似常態，但右偏程度較高 (偏態 = 0.88)，峰度較低 (0.50)，顯示不同受試者在肌肉收縮時的變異性較大。
+>
+> 整體而言，抓握動作下的肌電活動約為靜止狀態的 5.5 倍，且受試者間差異更為明顯。
+
+```{r describeBy-sex-table}
+desc_basic <- psych::describeBy(emg_df$basic, group = emg_df$Sex, mat = TRUE) %>%
+  select(group = group1, N = n, Mean = mean, SD = sd, Median = median, Min = min, Max = max, Skew = skew, Kurtosis = kurtosis, SEM = se) %>%
+  mutate(Action = "basic")
+
+desc_grip <- psych::describeBy(emg_df$grip, group = emg_df$Sex, mat = TRUE) %>%
+  select(group = group1, N = n, Mean = mean, SD = sd, Median = median, Min = min, Max = max, Skew = skew, Kurtosis = kurtosis, SEM = se) %>%
+  mutate(Action = "grip")
+
+desc_table <- bind_rows(desc_basic, desc_grip)
+
+desc_table %>%
+  kable(align = "l", digits = 2, row.names = FALSE,
+        caption = "Descriptive Statistics by Sex and Action") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 在靜止條件下，男性的肌電活動平均略高於女性，且分布較分散；在抓握條件下，男女平均值相近，但男性的變異度顯著較大。
+
+# 第三題：請寫出本實驗的實驗設計( 包含因子(獨立變數)、水準、受測者間/受測者內、相依變數(含單位)等)
+
+-   設計：二因子重複量測設計（repeated measures design）
+
+    1.  受試者間因子（Between-subjects）：Sex（2 水準：Male、Female）
+
+    2.  受試者內因子（Within-subjects）：action（2 水準：basic=靜止、grip=抓握）
+
+-   相依變數（Dependent Variable）：前臂肌群 EMG 電位，已對個人 MVC 正規化後的百分比，單位 %MVC。
+
+-   樣本：10 位健康成人（6 男、4 女），每位皆完成 2 種動作的量測。
+
+-   目的：檢驗動作（靜止 vs 抓握）與性別（男 vs 女）對 %MVC 之主效應與交互作用。
+
+# 第四題：進行 ANOVA 分析(請貼 R 執行結果圖)，並寫出主效果及交互作用項之顯著性(僅需寫出達顯著水準者)。
+
+```{r anova}
+TwoBetweenData.aov <- aov(EEG ~ Sex * action, data = dat_long)
+broom::tidy(TwoBetweenData.aov) %>%
+  kable(align = "l", digits = 3, row.names = FALSE,
+        caption = "ANOVA Results for EEG by Sex and Action") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> ANOVA 結果顯示，**動作的主效果達顯著** [F(1,16)=142.32, p\<.001]，表示不同動作 (basic vs. grip) 在 EEG 上有顯著差異。**性別主效果不顯著** [F(1,16)=0.31, p=.584]，**性別與動作的交互作用亦不顯著** [F(1,16)=0.03, p=.877]。
+
+# 第五題：請以“bon”方法進行主效果(“sex 性別”)事後檢定完成分群並說明其意義
+
+```{r posthoc-sex}
+TwoBetweenData.aov <- aov(EEG ~ Sex * action, data = dat_long)
+TwoBetweenData.posthoc <- emmeans(TwoBetweenData.aov, ~ Sex)
+as.data.frame(pairs(TwoBetweenData.posthoc, adjust = "bon")) %>%
+  kable(align = "l", digits = 3, row.names = FALSE,
+        caption = "Post-hoc Pairwise Comparisons for Sex (Bonferroni)") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 使用 Bonferroni 方法進行性別 (Sex) 主效果的事後檢定顯示，男女在 EEG 上的差異並不顯著 (F–M = -0.0292, SE = 0.0523, t(16) = -0.559, p = 0.584)。這表示在不同動作條件下，性別並未對 EEG 數值造成顯著影響。
+
+# 第六題：請以“bon”方法進行主效果(“action 因子”)事後檢定完成分群並說明其意義
+
+```{r posthoc-action}
+TwoBetweenData.posthoc <- emmeans(TwoBetweenData.aov, ~ action)
+as.data.frame(pairs(TwoBetweenData.posthoc, adjust = "bon")) %>%
+  kable(align = "l", digits = 3, row.names = FALSE,
+        caption = "Post-hoc Pairwise Comparisons for Action (Bonferroni)") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 使用 Bonferroni 方法進行動作 (action) 主效果的事後檢定顯示，basic 與 grip 兩種動作在 EEG 上有顯著差異 (basic – grip = -0.609, SE = 0.0523, t(16) = -11.657, p \< .0001)。此結果表示 grip 動作的 EEG 明顯高於 basic 動作，且差異高度顯著。
+
+# 第七題：請以“ bon”方法討論在性別在不同動作(靜止、抓握) 的情況下事後檢定討論
+
+```{r posthoc-sex-action}
+TwoBetweenData.posthoc <- emmeans(TwoBetweenData.aov, ~ Sex | action)
+as.data.frame(pairs(TwoBetweenData.posthoc, adjust = "bon")) %>%
+  kable(align = "l", digits = 3, row.names = FALSE,
+        caption = "Post-hoc Pairwise Comparisons for Sex within Action (Bonferroni)") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 使用 Bonferroni 方法分別在不同動作條件下比較性別差異，結果顯示：
+> -   **basic 動作**下，男女 EEG 差異不顯著 (F–M = -0.021, SE = 0.0739, t(16) = -0.284, p = 0.780)。
+> -   **grip 動作**下，男女 EEG 差異同樣不顯著 (F–M = -0.037, SE = 0.0739, t(16) = -0.506, p = 0.619)。
+> 這表示無論在靜止 (basic) 或抓握 (grip) 條件下，性別對 EEG 皆沒有顯著影響，與先前 ANOVA 的結果一致。
+
+# 第八題：請以“bon”方法討論在不同動作(靜止、抓握)在性別的情況下事後檢定討論
+
+```{r posthoc-action-sex}
+TwoBetweenData.posthoc <- emmeans(TwoBetweenData.aov, ~ action | Sex)
+as.data.frame(pairs(TwoBetweenData.posthoc, adjust = "bon")) %>%
+  kable(align = "l", digits = 3, row.names = FALSE,
+        caption = "Post-hoc Pairwise Comparisons for Action within Sex (Bonferroni)") %>%
+  kable_styling(bootstrap_options = c("bordered", "responsive", "striped"), full_width = FALSE)
+```
+
+> 使用 Bonferroni 方法分別在不同性別下比較動作 (basic vs. grip) 的差異，結果顯示：
+> * **女性 (F)**：grip 動作的 EEG 顯著高於 basic 動作，差異達顯著 (basic – grip = -0.601, SE = 0.0810, t(16) = -7.423, p < .0001)。
+> * **男性 (M)**：同樣地，grip 動作的 EEG 亦顯著高於 basic 動作 (basic – grip = -0.618, SE = 0.0661, t(16) = -9.340, p < .0001)。
+> 此結果顯示，無論性別，grip 動作相較於 basic 動作都能顯著提升 EEG 值，與 ANOVA 主效果結果一致。
+
+
+# 第九題：繪出“action 因子”與“sex 性別因子”長條圖
+
+```{r barplot}
+summary_data <- dat_long %>%
+  group_by(action, Sex) %>%
+  summarise(
+    mean_EEG = mean(EEG),
+    se_EEG = sd(EEG) / sqrt(n())
+  )
+
+ggplot(summary_data, aes(x = action, y = mean_EEG, fill = Sex)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  geom_errorbar(aes(ymin = mean_EEG - se_EEG, ymax = mean_EEG + se_EEG),
+                position = position_dodge(width = 0.8), width = 0.25) +
+  labs(title = "Mean EEG by Action and Sex",
+       x = "Action",
+       y = "EEG") +
+  theme_minimal()
+```
+
+> 顯示不同動作（basic 與 grip）以及性別（F 與 M）在 EEG 值上的平均差異。由圖可見，在 basic 動作下，男女的 EEG 值皆偏低（約 0.1–0.15），且差異不大；然而在 grip 動作下，EEG 值明顯上升，女性約為 0.7，男性約為 0.75，整體皆高於 basic 動作。誤差線顯示數據的變異程度，男性在 grip 動作下的變異稍大於女性。整體而言，動作型態對 EEG 的影響明顯大於性別。
+
+# 第十題：繪出“action 因子”與“sex 因子”之二階線圖(X 軸為 action 因子)
+
+```{r interaction-action}
+ggplot(summary_data, aes(x = action, y = mean_EEG, color = Sex, group = Sex)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean_EEG - se_EEG, ymax = mean_EEG + se_EEG), width = 0.1) +
+  labs(title = "Interaction Plot of EEG by Action and Sex",
+       x = "Action",
+       y = "EEG") +
+  theme_minimal()
+```
+
+> EEG 在不同動作（basic 與 grip）以及性別（F 與 M）下的交互作用圖。由圖可見，不論男女，EEG 值在 basic 動作下皆較低（約 0.1–0.15），在 grip 動作下明顯上升（約 0.7–0.8）。雖然男性在 grip 動作下的平均 EEG 稍高於女性，但兩者的趨勢幾乎平行，顯示性別對 EEG 的影響相對較小，而動作型態對 EEG 的影響更為顯著。誤差線則顯示，grip 動作下的變異性大於 basic 動作。
+
+# 第十一題：繪出“action 因子”與“sex 因子”之二階線圖(X 軸為 sex 因子)
+
+```{r interaction-sex}
+ggplot(summary_data, aes(x = Sex, y = mean_EEG, color = action, group = action)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean_EEG - se_EEG, ymax = mean_EEG + se_EEG), width = 0.1) +
+  labs(title = "Interaction Plot of EEG by Sex and Action",
+       x = "Sex",
+       y = "EEG") +
+  theme_minimal()
+```
+
+> 顯示不同性別（F 與 M）在兩種動作（basic 與 grip）下的 EEG 平均值變化。結果顯示，不論性別，basic 動作的 EEG 值皆偏低（約 0.1–0.15），而 grip 動作的 EEG 值顯著提高（約 0.7–0.8）。在相同動作下，男性的 EEG 平均值略高於女性，但差異幅度不大。誤差線顯示 grip 動作下的數據變異性較大，basic 動作下則相對穩定。整體而言，動作型態對 EEG 的影響遠大於性別差異。
+
